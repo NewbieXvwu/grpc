@@ -29,14 +29,19 @@ jobs:
       - name: Show interpreter
         run: python -c "import platform, sys; print(sys.version, platform.machine())"
       - name: Download and verify sdist
+        # Fetch the file directly: `pip download --no-binary :all:` would also force the
+        # build dependencies (Cython) to compile from source.
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip download "grpcio==$env:GRPCIO_VERSION" --no-binary :all: --no-deps -d sdist
-          $f = Get-ChildItem sdist -Filter "grpcio-*.tar.gz" | Select-Object -First 1
-          $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+          python -m pip install --upgrade pip
+          $meta = Invoke-RestMethod "https://pypi.org/pypi/grpcio/$env:GRPCIO_VERSION/json"
+          $sd = $meta.urls | Where-Object { $_.packagetype -eq "sdist" } | Select-Object -First 1
+          New-Item -ItemType Directory -Force sdist | Out-Null
+          $f = Join-Path sdist $sd.filename
+          Invoke-WebRequest $sd.url -OutFile $f
+          $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
           if ($h -ne $env:GRPCIO_SHA256) { throw "sdist hash mismatch: $h" }
-          "SDIST=$($f.FullName)" | Out-File -Append $env:GITHUB_ENV
+          "SDIST=$((Resolve-Path $f).Path)" | Out-File -Append $env:GITHUB_ENV
       - name: Build wheel
         run: python -m pip wheel "${{ env.SDIST }}" --no-deps -w wheelhouse -v
       - name: Smoke test
