@@ -43,7 +43,14 @@ jobs:
           if ($h -ne $env:GRPCIO_SHA256) { throw "sdist hash mismatch: $h" }
           "SDIST=$((Resolve-Path $f).Path)" | Out-File -Append $env:GITHUB_ENV
       - name: Build wheel
-        run: python -m pip wheel "${{ env.SDIST }}" --no-deps -w wheelhouse -v
+        # Same toolchain pins as grpc's tools/run_tests/artifacts/build_artifact_python.bat.
+        # Newer setuptools (84.x) bypasses grpc's _spawn_patch, so MSVC gets both
+        # /std:c++17 and /std:c11 (error D8016).
+        env:
+          NO_CYTHON_COMPILE: "true"
+        run: |
+          python -m pip install setuptools==77.0.1 wheel==0.43.0 cython==3.2.8 packaging
+          python -m pip wheel "${{ env.SDIST }}" --no-deps --no-build-isolation -w wheelhouse -v
       - name: Smoke test
         shell: pwsh
         run: |
